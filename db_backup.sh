@@ -17,6 +17,7 @@ docker run \
     -v "$BACKUP_DIR:/backup" \
     schnitzler/mysqldump \
     mysqldump --opt \
+        --no-tablespaces
         -h db \
         -u "$MYSQL_USER" \
         -p"$MYSQL_PASSWORD" \
