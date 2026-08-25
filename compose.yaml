@@ -20,6 +20,7 @@ services:
 
   db:
     image: mysql:8
+    command: --mysql-native-password=ON
     restart: always
     networks:
       backend:
