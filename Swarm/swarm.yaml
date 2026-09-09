@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # Веб-приложение
+  web:
+    image: 10.130.0.29:5000/web:latest  # локальный образ на айпи менеджера
+    # build:  # build НЕ РАБОТАЕТ в Swarm, нужно собирать образ заранее
+    #   context: .
+    #   dockerfile: Dockerfile.python
+    deploy:
+      replicas: 2  # количество реплик
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - backend
+    environment:
+      DB_HOST: db  # имя сервиса используется как хост
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+    depends_on:
+      - db
+
+# База данных
+  db:
+    image: mysql:8
+    command: --mysql-native-password=ON
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      placement:
+        constraints:
+          - node.role == manager  # или worker
+    networks:
+      - backend
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql  # persistent storage
+
+# HAProxy (reverse-proxy)
+  reverse-proxy:
+    image: haproxy:2.4
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+    networks:
+      - backend
+    ports:
+      - "8080:8080"  # публикуем порт на всех нодах
+    volumes:
+      - ./haproxy/reverse/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - web
+
+# Nginx (ingress-proxy) - изменен для Swarm
+  ingress-proxy:
+    image: nginx:latest
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+    networks:
+      - backend
+    ports:
+      - "80:80"  # публикуем порт HTTP
+      - "443:443"  # если нужен HTTPS
+    volumes:
+      - ./nginx/ingress/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ingress/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - web
+
+networks:
+  backend:
+    driver: overlay  # overlay для Swarm
+    attachable: true  # чтобы контейнеры могли подключаться
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24  # оставляем подсеть
+
+volumes:
+  db_data:
+    driver: local  # или shared storage (NFS или другое)
